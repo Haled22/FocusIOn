@@ -97,16 +97,15 @@ class Advertencia(QWidget):
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Question)
         msg.setWindowFlags(Qt.WindowStaysOnTopHint)
-        # setting message for Message Box
-        msg.setText("Question")
         
-        # setting Message box window title
+        msg.setText("Llamada de atención")
+        
+       
         msg.setWindowTitle("Se require su atención aquí")
         
-        # declaring buttons on Message Box
+      
         msg.setStandardButtons(QMessageBox.Ok)
-        
-        # start the app
+  
         retval = msg.exec_()
         if retval == QMessageBox.Ok:
             
@@ -301,3 +300,4 @@ if __name__ == "__main__":
     w = FocusIOn()
     w.show() 
     sys.exit(app.exec_())
+
