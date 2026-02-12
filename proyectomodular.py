@@ -19,9 +19,9 @@ class MouseListener(QObject):
         super(MouseListener, self).__init__()
         self.corriendo = True
     def run(self):
-        with mouse.Listener(on_click=self.on_click) as listener:
-            listener.join()
-        self.finished.emit()
+        self.listener = mouse.Listener(on_click=self.on_click)
+        self.listener.start()
+        
     def on_click(self,pressed):
         if self.corriendo == False:
                 return False
@@ -30,6 +30,8 @@ class MouseListener(QObject):
             self.pressed_signal.emit()
     def stop(self):
         self.corriendo= False
+        self.listener.stop()
+    
 
     
             
@@ -300,4 +302,3 @@ if __name__ == "__main__":
     w = FocusIOn()
     w.show() 
     sys.exit(app.exec_())
-
