@@ -50,10 +50,10 @@ class timerThread(QObject):
             self.update_timer.emit(qtime.toString("hh:mm:ss"))
             time.sleep(1)
             if self.corriendo == False:
-                self.finished.emit()
+                
                 break
             
-
+        
         self.finished.emit()
     def stop(self):
         self.corriendo= False
@@ -63,6 +63,8 @@ class Advertencia(QWidget):
         super().__init__()
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         window = target_window[0]
+        
+
         x = window.left
         y = window.top
         width = window.width
@@ -122,7 +124,7 @@ class FocusIOn(QWidget):
         super().__init__()
         self.tarea_iniciada = False
         self.tarea = ""
-        
+        self.interrumpido = False
         self.timer_thread = QThread()
         self.timer_worker = timerThread()
         self.clic_thread = QThread()
@@ -139,13 +141,19 @@ class FocusIOn(QWidget):
         
 
         width, height = 200, 400
+        
         self.resize(width, height)
         screen = QDesktopWidget().availableGeometry()
         x = screen.width() - width
         y = screen.height()- height
-        self.move(x,y)
+        self.move(round(x+width/2),y)
+        self.original_pos=QPoint(round(x+width/2),y)
+        self.hover_pos = QPoint(x,y)
         self.setWindowTitle("FocusIOn")
-
+        
+        self.animation = QPropertyAnimation(self, b"pos")
+        self.animation.setDuration(300) # 300ms
+        self.animation.setEasingCurve(QEasingCurve.OutQuad)
            
         self.background = QLabel(self)
         self.background.setGeometry(0, 0, width, height)
@@ -208,7 +216,18 @@ class FocusIOn(QWidget):
         """)
         
     
-    
+    def enterEvent(self, event):
+        """Triggered when mouse enters the window."""
+        self.animation.stop()
+        self.animation.setEndValue(self.hover_pos)
+        self.animation.start()
+
+    def leaveEvent(self, event):
+        """Triggered when mouse leaves the window."""
+        self.animation.stop()
+        self.animation.setEndValue(self.original_pos)
+        self.animation.start()
+
     
     def start_clic_manager(self):
         self.clic_worker.moveToThread(self.clic_thread)
@@ -236,6 +255,20 @@ class FocusIOn(QWidget):
             elif self.tarea_iniciada == False and self.windowTitle() != window_title:
                 self.target_window = pyautogui.getWindowsWithTitle(window_title)
                 self.ventana.setText(window_title)
+            elif self.timer_iniciado and window_title ==self.tarea:
+                self.interrumpido=True
+                if self.timer_worker:
+                    self.timer_worker.stop()
+                    self.timer_thread.quit()
+                
+                
+                
+                    
+                    
+                    
+                    
+            
+                
 
     def evt_update_timer(self,val):
         self.l_timer.setText(val)
@@ -243,27 +276,35 @@ class FocusIOn(QWidget):
     
         
     def start_timer_thread(self):
+        
         self.timer_worker.moveToThread(self.timer_thread)
 
         self.timer_thread.started.connect(self.timer_worker.run)
         self.timer_worker.update_timer.connect(self.evt_update_timer)
 
         self.timer_worker.finished.connect(self.evt_ventana_llamado_atencion)
-        self.timer_worker.finished.connect(self.timer_thread.quit)
-        self.timer_worker.finished.connect(self.timer_worker.deleteLater)
-        self.timer_thread.finished.connect(self.timer_thread.deleteLater)
+        #self.timer_worker.finished.connect(self.timer_thread.quit)
+        #self.timer_worker.finished.connect(self.timer_worker.deleteLater)
+        #self.timer_thread.finished.connect(self.timer_thread.deleteLater)
 
         self.timer_thread.start()
         
     def evt_ventana_llamado_atencion(self):   
-    
-        self.llamada_atención = Advertencia(self.target_window)
-        self.llamada_atención.show()
-        #self.target_window[0].activate()
-        self.llamada_atención.show_question_messagebox()
-        self.llamada_atención.destroyed.connect(self.reset_timer)
+        if self.interrumpido == False:
+            self.llamada_atención = Advertencia(self.target_window)
+            self.llamada_atención.show()
+            
+            self.llamada_atención.show_question_messagebox()
+            self.llamada_atención.destroyed.connect(self.reset_timer)
+        else:
+            self.reset_timer()
+            
     def reset_timer(self):
-        
+        if self.timer_worker:
+            self.timer_worker.stop()
+            self.timer_thread.quit()
+        time.sleep(1)
+        self.interrumpido = False
         self.timer_iniciado=False
         self.l_timer.setText("00:00:00")
         self.timer_thread = QThread()
