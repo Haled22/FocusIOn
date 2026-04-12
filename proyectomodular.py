@@ -1,13 +1,12 @@
 import sys
 from eyetrax import GazeEstimator, run_9_point_calibration
 from eyetrax.calibration import run_dense_grid_calibration
-from PyQt5.QtWidgets import QApplication, QRubberBand, QWidget,QMainWindow,QListWidget,QStackedWidget,QListWidgetItem,QProgressBar, QPushButton, QLabel,QComboBox,QDesktopWidget,QMessageBox,QGraphicsOpacityEffect
+from PyQt5.QtWidgets import QApplication, QRubberBand, QWidget,QMainWindow,QStackedWidget,QDialog, QPushButton,QVBoxLayout, QLabel,QDesktopWidget,QMessageBox,QHBoxLayout
 from PyQt5.QtCore import *
-from PyQt5.QtGui import QIcon, QCursor,QFont,QPixmap,QImageReader
+from PyQt5.QtGui import QIcon, QCursor,QFont,QPixmap,QImageReader,QMovie
 
 from pynput import mouse
 import pyautogui
-import threading
 import time
 import os.path
 import cv2
@@ -22,13 +21,13 @@ from eyetrax.filters import (
 
 
 tolerancia_max =100
-tolerancia_elegida=QTime(0,0,15)
-tolerancia_elegida_Og =QTime(0,0,15)
+tolerancia_elegida=QTime(0,0,8)
+tolerancia_elegida_Og =QTime(0,0,8)
 tiempo_elegido =0
 
 area_trabajo = []
-time_left = QTime(0,0,30)
-time_left_og = QTime(0,0,30)
+time_left = QTime(0,1,0)
+time_left_og = QTime(0,1,0)
 
 
 
@@ -45,10 +44,9 @@ class GazeListener(QObject):
         self.y=0
         self.paused= False
         self.recal = False
-        self.cap = cv2.VideoCapture(0)      
+        #self.cap = cv2.VideoCapture(0)      
     def initGazeEstimator(self):
 
-        time.sleep(1)
         self.estimator = GazeEstimator()
         if os.path.isfile("gaze_model.pkl") and self.recal ==False:
             
@@ -59,12 +57,12 @@ class GazeListener(QObject):
             smoother = KalmanEMASmoother(kalman)
             smoother.tune(self.estimator)
             self.estimator.save_model("gaze_model.pkl")
-            self.estimator = GazeEstimator()
-            self.estimator.load_model("gaze_model.pkl")
+            #self.estimator = GazeEstimator()
+            #self.estimator.load_model("gaze_model.pkl")
         self.cap = cv2.VideoCapture(0)
     def recalibrate(self):
         self.recal = True
-        time.sleep(1)
+        #time.sleep(1)
         self.initGazeEstimator()
     def run(self):
         self.initGazeEstimator()
@@ -116,7 +114,6 @@ class MouseListener(QObject):
             self.listener = mouse.Listener(on_click=self.on_click)
             self.listener.start()   
     def on_click(self,pressed):
-
         if self.corriendo == False:
                 return False
         if pressed:
@@ -146,6 +143,84 @@ class Punto_visual(QWidget):
                 
             }
         """)
+#Instrucciones
+class CajaMensaje(QDialog):
+    def __init__(self, text="",modo=0, parent=None):
+        super().__init__(parent)
+        self.drag_pos = None
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+        
+        reader = QImageReader("close_button.svg")
+        self.close_icon = QPixmap(reader.read())
+
+        self.contenedor = QWidget()
+        self.contenedor.setObjectName("contenedor")
+
+        layout = QVBoxLayout(self.contenedor)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+        top_layout = QHBoxLayout()
+        top_layout.addStretch()
+        
+        self.b_cerrar = QPushButton()
+        self.b_cerrar.setIcon(QIcon(self.close_icon))
+        self.b_cerrar.clicked.connect(self.closeEvent)
+
+        top_layout.addWidget(self.b_cerrar)
+
+        self.l_mensaje = QLabel(text)
+        self.l_mensaje.setWordWrap(True)
+
+        layout.addLayout(top_layout )
+        layout.addWidget(self.l_mensaje)
+
+        if modo ==0:
+            self.ok_button = QPushButton("OK")
+            self.ok_button.clicked.connect(self.accept)
+            layout.addWidget(self.ok_button)
+
+        elif modo ==1:
+            b_layout = QHBoxLayout()
+            self.ok_button = QPushButton("OK")
+            self.ok_button.clicked.connect(self.accept)
+            self.no_button = QPushButton("No")
+            self.no_button.clicked.connect(self.reject)
+            b_layout.addWidget(self.ok_button)
+            b_layout.addWidget(self.no_button)
+            layout.addLayout(b_layout)
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(self.contenedor)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(46,46,68,220);  
+                color: rgba(255,255,255,1);             
+            }
+            QPushButton:hover {
+                background-color: rgba(86, 86, 109, 220);
+                
+            }             
+            QLabel {color: #F8F8F2; background-color: rgba(46,46,68,220); border-radius: 6px; padding: 6px;
+                           }
+            #contenedor {
+                background-color: rgba(20, 30, 47, 80);border-radius: 20px;border-radius: 10px;color: black;
+            }
+            
+            """                
+                           )
+        
+
+        self.resize(300, 150)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and self.drag_pos:
+            self.move(event.globalPos() - self.drag_pos)
 
 #Clase que permite al usuario seleccionar su area de trabajo
 class AreaTrabajo(QWidget):
@@ -191,23 +266,19 @@ class AreaTrabajo(QWidget):
             self.aceptar_seleccion()
 
     def mostrar_instrucciones(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Question)
-        msg.setWindowFlags(Qt.WindowStaysOnTopHint)
-        msg.setText("Seleccione el area de trabajo manteniendo presionando su boton izquierdo y moviendo su mouse para generar la seleccion sobre la pantalla semi transparente")
-        msg.setWindowTitle("Instrucciones")
-        msg.setStandardButtons(QMessageBox.Ok)
+        
+        msg = CajaMensaje("Seleccione el area de trabajo manteniendo presionando su boton izquierdo y moviendo su mouse para generar la seleccion sobre la pantalla semi transparente",0,self)
         retval = msg.exec_()
 
+
     def aceptar_seleccion(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Question)
-        msg.setWindowFlags(Qt.WindowStaysOnTopHint)
-        msg.setText("Esta es su area de trabajo?")
-        msg.setWindowTitle("Confimación")
-        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        
+
+        msg = CajaMensaje("Esta es su area de trabajo?",1,self)
         retval = msg.exec_()
-        if retval == QMessageBox.Ok:
+        print(str(retval))
+        if retval == True:
+            print("Hola")
             global area_trabajo
             selection_rect = self.rubberBand.geometry()
             area_trabajo.append(selection_rect.getCoords())
@@ -227,9 +298,10 @@ class Temporizador(QObject):
         self.corriendo = True
         self.paused= False
         self.mode = mode
-        self.reset_x=False
+        
         self.og_tolerancia = None
-        self.og_time_left =None       
+        self.og_time_left =None
+        self.x=0   
     def run(self): 
         if self.mode ==0:
             global time_left
@@ -244,8 +316,8 @@ class Temporizador(QObject):
             self.og_tolerancia = tolerancia_elegida_Og
             self.og_tolerancia=tolerancia_elegida
             self.tiempo = tolerancia_elegida.hour()*3600+tolerancia_elegida.minute()*60+tolerancia_elegida.second()
-        x=0
-        while x<self.tiempo:
+        
+        while self.x<self.tiempo:
             if self.paused:
                 while self.paused:
                     time.sleep(0.1)   
@@ -254,11 +326,11 @@ class Temporizador(QObject):
                 if self.mode==0 and self.og_time_left !=time_left_og:
                     self.tiempo = time_left_og.hour()*3600+time_left_og.minute()*60+time_left_og.second()
                     time_left = time_left_og
-                    x=0  
+                    self.x=0  
                 elif self.mode ==1 and self.og_tolerancia != tolerancia_elegida_Og:
                     self.tiempo = tolerancia_elegida.hour()*3600+tolerancia_elegida.minute()*60+tolerancia_elegida.second()
                     tolerancia_elegida = tolerancia_elegida_Og
-                    x=0   
+                    self.x=0   
             if self.mode ==0:
                 time_left = time_left.addSecs(-1)
                 self.update_timer.emit(time_left.toString("hh:mm:ss"))
@@ -266,10 +338,10 @@ class Temporizador(QObject):
                 tolerancia_elegida = tolerancia_elegida.addSecs(-1)
                 self.update_timer.emit(tolerancia_elegida.toString("hh:mm:ss"))
             time.sleep(1)
-            x+=1
-            if x>=self.tiempo and self.mode==0:
+            self.x+=1
+            if self.x>=self.tiempo and self.mode==0:
                 self.pause()
-                x=0
+                self.x=0
                 self.success.emit()
                 while self.paused:
                     time.sleep(0.1)
@@ -278,22 +350,33 @@ class Temporizador(QObject):
                         break   
                 self.tiempo = time_left_og.hour()*3600+time_left_og.minute()*60+time_left_og.second()
                 time_left = time_left_og
-            if x>=self.tiempo and self.mode==1:
+            if self.x>=self.tiempo and self.mode==1:
                 self.open_warning.emit()
                 n=5
                 for j in range(n):
+                    self.update_warning.emit()
+                    if self.x <self.tiempo:
+                        break
                     if self.corriendo == False:
                         break
                     for i in range(5):
+                        print("uh oh")
                         time.sleep(1)
                         if self.corriendo == False:
                             break
-                    self.update_warning.emit()
+                        if self.x <self.tiempo:
+                            break
+                   
             if self.corriendo == False:
                 break   
         self.finished.emit()
     def reset(self):
-        self.reset_x=True
+        self.x =0
+        
+        if self.mode==0:
+            self.og_time_left=None
+        else:
+            self.og_tolerancia=None
     def stop(self):
         self.corriendo= False
     def pause(self):
@@ -302,6 +385,33 @@ class Temporizador(QObject):
             self.paused = False
         else:
             self.paused = True
+
+
+
+class MostrarMonito(QWidget):
+    def __init__(self, parent=None,modo=""):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.Tool
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.label = QLabel(self)
+        self.label.setObjectName("special")
+        self.label.setAlignment(Qt.AlignCenter)
+        self.movie = QMovie(modo)
+        self.label.setMovie(self.movie)
+        self.resize(112, 112)
+        self.show_monito()
+        
+    def show_monito(self, duration=3000):
+        self.movie.start()
+        self.show()
+        QTimer.singleShot(duration, self.esconder_monito)
+    def esconder_monito(self):
+        self.movie.stop()
+        self.hide()
+        self.close()
+
 #Clase que modifica el QLable para que se pueda ajustar el tiempo con el drag del mouse presionado 
 class label_tiempo_ajustable(QLabel):
     def __init__(self, text, parent=None, mode=None):
@@ -347,6 +457,7 @@ class label_tiempo_ajustable(QLabel):
 #Clase que coloca un pestaña semi transparente roja sobre la pantalla cuando el usuario no presta atencion
 #sobre el area de trabajo elegida
 class Advertencia(QWidget):
+    success = pyqtSignal()
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WA_DeleteOnClose, True)
@@ -358,7 +469,8 @@ class Advertencia(QWidget):
         self.move(x_target,y_target) 
         self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setWindowOpacity(0.1)
+        self.og_opacity = 0.1
+        self.setWindowOpacity(self.og_opacity)
         self.background = QLabel(self)
         self.background.setGeometry(0, 0, w_target, h_target)
         self.background.setStyleSheet("""
@@ -369,12 +481,15 @@ class Advertencia(QWidget):
                 background-repeat: no-repeat;   
             }
         """)
-        time.sleep(1)
-        
+
+    def mostrar(self):
+        self.show()     
     def mousePressEvent(self, event):
-        self.close()
+        self.success.emit()
+        self.hide()
+        self.setWindowOpacity(self.og_opacity)
     def closeEvent(self,event):
-        
+        #Que queria hacer aqui? talvez algo con el timer
         self.background.deleteLater() 
         self.close()
 #Clase que hace que los botones del menu principal se cambien de posicion cuando 
@@ -417,13 +532,16 @@ class FocusIOn(QMainWindow):
     start_mouse_tracking_signal = pyqtSignal()
     #start_success_msg = pyqtSignal() tbd
     start_distraido_timer = pyqtSignal()
+    mostrar_advertencia = pyqtSignal()
     
     def __init__(self):
         super().__init__() 
         self.punto_visual = Punto_visual()
         self.mode =0
+        self.clicks_count =0
+        self.timer_iniciado = False
         self.tarea_iniciada = False
-        self.paused = False
+        self.paused = True
         self.interrumpido = False
         self.count=0
 
@@ -436,7 +554,10 @@ class FocusIOn(QMainWindow):
         self.count_down_thread = QThread()
         self.timer_distraido_worker = Temporizador(1)
         self.timer_distraido_thread = QThread()
+    
+
         self.llamada_atencion = None
+        
         
         self.width, self.height = 160, 240
         self.resize(self.width, self.height)
@@ -448,8 +569,7 @@ class FocusIOn(QMainWindow):
         
         self.setWindowTitle("FocusIOn")
 
-        self.clicks_count =0
-        self.timer_iniciado = False
+        
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)   
 
@@ -496,6 +616,12 @@ class FocusIOn(QMainWindow):
                 
             }             
             QLabel {color: #F8F8F2; background-color: rgba(46,46,68,220); border-radius: 6px; padding: 6px;
+                           }
+            QLabel#special {
+                background-color: transparent;
+                color: palette(windowText);
+                border-radius: 0px;
+                padding: 0px;
                            }
             
             """                
@@ -638,12 +764,20 @@ class FocusIOn(QMainWindow):
         self.mode =0
         return mouse_widget
     def mostrarUiMouse(self):
+        self.tarea_iniciada = False
+        self.timer_iniciado=False
+        self.interrumpido =False
         if self.punto_visual.isVisible():
             self.punto_visual.hide()
-        if self.count_down_worker.paused==False:
-            self.count_down_worker.pause()
-        if self.timer_distraido_worker.paused==False:
-            self.timer_distraido_worker.pause()
+        if self.count_down_thread.isRunning():
+            if self.count_down_worker.paused==False:
+                self.count_down_worker.pause()
+        
+        if self.timer_distraido_thread.isRunning():
+            if self.timer_distraido_worker.paused==False:
+                self.timer_distraido_worker.pause()
+            
+                
         if self.gaze_thread != None:
             if self.gaze_thread.isRunning():
                 self.gaze_worker.stop()
@@ -655,33 +789,27 @@ class FocusIOn(QMainWindow):
             self.mouse_screen = self.initMouse()
             self.paginas.addWidget(self.mouse_screen)
         self.paginas.setCurrentWidget(self.mouse_screen)
-        self.start_mouse_tracking_signal.emit()
+       
     def mostrarUiOjos(self):
+        self.tarea_iniciada = False
+        self.timer_iniciado=False
+        self.interrumpido=False
+        
         if self.count_down_thread.isRunning():
-            self.count_down_worker.stop()
-            self.count_down_thread.quit()
-            self.count_down_thread.wait()
-            self.count_down_worker = None
-            self.count_down_thread = None
-            self.count_down_worker = Temporizador(0)
-            self.count_down_thread = QThread()
+            if self.count_down_worker.paused==False:
+                self.count_down_worker.pause()
         
         if self.timer_distraido_thread.isRunning():
-            self.timer_distraido_worker.stop()
-            self.timer_distraido_thread.quit()
-            self.timer_distraido_thread.wait()
-            self.timer_distraido_worker = None
-            self.timer_distraido_thread = None
-            self.timer_distraido_worker = Temporizador(1)
-            self.timer_distraido_thread = QThread()
+            if self.timer_distraido_worker.paused==False:
+                self.timer_distraido_worker.pause()
         if self.clic_thread.isRunning():
             self.clic_worker.stop()
             self.clic_thread.quit()
             self.clic_thread.wait()
             self.clic_worker = None
             self.clic_thread = None
-            self.clic_worker = MouseListener()
-            self.clic_thread = QThread()
+            #self.clic_worker = MouseListener()
+            #self.clic_thread = QThread()
         if self.ojos_screen == None:
             self.ojos_screen = self.initOjos()
             self.paginas.addWidget(self.ojos_screen)
@@ -705,17 +833,22 @@ class FocusIOn(QMainWindow):
             if  ret or frame is not None:
                 cap.release()
                 time.sleep(0.1)
-                self.gaze_worker = GazeListener()
-                self.gaze_thread = QThread()
+                try:
+                    self.gaze_worker = GazeListener()
+                    self.gaze_thread = QThread()
+                except:
+                    print("Aha!")
                 self.gaze_worker.moveToThread(self.gaze_thread)
                 self.gaze_thread.started.connect(self.gaze_worker.run)
                 self.gaze_worker.update_coordinates.connect(self.evt_is_in_window)
                 self.gaze_thread.start()
                       
     def evt_clic(self):
+       print("I'm working punk")
        global area_trabajo
        window_title = pyautogui.getActiveWindowTitle()
-       if area_trabajo and self.tarea_iniciada and not self.clic_worker.paused:
+       
+       if area_trabajo and self.tarea_iniciada:
             if self.count_down_thread.isRunning()==False:
                 self.start_countdown_signal.emit()
             x = QCursor.pos().x()
@@ -732,13 +865,15 @@ class FocusIOn(QMainWindow):
                         self.timer_distraido_worker.pause()
                         self.reset_timer()
                         time.sleep(0.1)
-            else:
+            elif self.paused == False:
                 if window_title != self.windowTitle():
                     if self.tarea_iniciada == True and self.timer_iniciado==False:
+                        print("1")
                         self.timer_iniciado = True
                         self.interrumpido = False
                         self.start_distraido_timer.emit()
                     elif self.timer_distraido_worker.paused: 
+                        print("2")
                         self.timer_distraido_worker.pause()
                         self.interrumpido =False
                 
@@ -752,6 +887,7 @@ class FocusIOn(QMainWindow):
        if self.gaze_thread != None:
         if self.gaze_thread.isRunning():
             if area_trabajo and self.tarea_iniciada and not self.gaze_worker.paused:
+                    
                     if self.count_down_thread != None:
                         if self.count_down_thread.isRunning() == False:   
                             self.start_countdown_signal.emit()
@@ -765,19 +901,25 @@ class FocusIOn(QMainWindow):
                         self.count+=1
                         if self.count == 3:
                             if self.timer_iniciado:
-                                if self.count_down_worker and self.count_down_worker.paused == False:
+                                
+                                if self.timer_distraido_worker and self.timer_distraido_worker.paused == False:
+                                    print("stop")
                                     self.timer_distraido_worker.pause()
-                                    if self.l_timer_distraido:  
-                                        self.reset_timer() 
-                    else:
-                        self.count=0
+                                    self.reset_timer()
+                                    time.sleep(0.1)
+                                    self.count =0
+                    elif self.paused == False:
+               
                         if self.tarea_iniciada == True and self.timer_iniciado==False:
+                            print("1")
                             self.timer_iniciado = True
                             self.interrumpido = False
-                            self.start_timer_distraido()
-                        elif self.timer_distraido_worker.paused:
+                            self.start_distraido_timer.emit()
+                        elif self.timer_distraido_worker.paused: 
+                            print("2")
                             self.timer_distraido_worker.pause()
                             self.interrumpido =False
+
 
     def evt_update_count_down(self,val):
         self.l_timer_count_down.setText(val)
@@ -793,6 +935,7 @@ class FocusIOn(QMainWindow):
         self.count_down_worker.finished.connect(self.count_down_worker.deleteLater)
         self.count_down_thread.finished.connect(self.count_down_thread.deleteLater)
         self.count_down_thread.start()
+        self.paused=False
 
     def start_timer_distraido(self):     
         self.timer_distraido_worker.moveToThread(self.timer_distraido_thread)
@@ -813,42 +956,47 @@ class FocusIOn(QMainWindow):
                 print("No se pudo cambiar la opacidad")
 
     def evt_success(self):
-        if self.clic_worker:
-            self.clic_worker.pause()
-        if self.gaze_worker:
-            if self.gaze_worker.paused==False:
-                self.gaze_worker.pause()
-        if self.count_down_worker:
-            self.timer_distraido_worker.pause()
-        self.l_timer_count_down.setEnabled(True)
-        self.l_timer_distraido.setEnabled(True)
+        self.pause_tracking()
+        #self.confetti = MostrarMonito(self,"confetti")
+        self.happy = MostrarMonito(self,"sway")
+        self.happy = MostrarMonito(self,"confetti")
+  
+        
 
     def evt_ventana_llamado_atencion(self):
         if self.interrumpido == False and self.tarea_iniciada:
-            self.llamada_atencion = Advertencia()
-            self.llamada_atencion.show()      
-            self.llamada_atencion.destroyed.connect(self.reset_timer)
+            if self.llamada_atencion==None:
+                self.llamada_atencion = Advertencia()
+                self.llamada_atencion.success.connect(self.reset_timer)
+                self.mostrar_advertencia.connect(self.llamada_atencion.mostrar)     
+                  
+            self.mostrar_advertencia.emit()     
+               
 
     def reset_timer(self):
-        if self.timer_distraido_worker:
+        print("reset")
+        if self.timer_distraido_worker!=None:
             global tolerancia_elegida 
             global tolerancia_elegida_Og
             tolerancia_elegida= tolerancia_elegida_Og
             if tolerancia_elegida != None:
                 self.evt_update_distraido_timer(tolerancia_elegida.toString("hh:mm:ss"))
-            self.timer_distraido_worker.stop()
-            self.timer_distraido_thread.quit()
+            
+            self.timer_distraido_worker.reset()
+
+            self.count =0
+            """ self.timer_distraido_thread.quit()
             self.timer_distraido_thread.wait()
             self.timer_distraido_worker = None
-            self.timer_distraido_thread = None 
-        if self.gaze_worker:
+            self.timer_distraido_thread = None  """
+        """ if self.gaze_worker:
             if self.gaze_worker.paused:
-                self.gaze_worker.pause() 
-        self.interrumpido = False
+                self.gaze_worker.pause()  """
+        """ self.interrumpido = False
         self.timer_iniciado=False
        
         self.timer_distraido_thread = QThread()
-        self.timer_distraido_worker = Temporizador(1)
+        self.timer_distraido_worker = Temporizador(1) """
 
     def agregar_tarea(self):
         self.b_acceptar.setEnabled(False)
@@ -860,8 +1008,10 @@ class FocusIOn(QMainWindow):
     def start_tracking(self):
         if self.tarea_iniciada:
             if self.mode ==0:
-                self.start_clic_manager() 
-                self.start_countdown_signal.emit()
+                self.start_clic_manager()
+                if self.count_down_thread.isRunning()==False:
+                    self.start_countdown_signal.emit()
+
             elif self.mode ==1 and self.gaze_thread.isRunning() ==False:
                 self.start_gaze_tracking()
         self.l_timer_count_down.setEnabled(False)
@@ -871,19 +1021,35 @@ class FocusIOn(QMainWindow):
  
     def iniciar_tarea(self):
         global area_trabajo
+        
         if area_trabajo:
             if self.tarea_iniciada:
                 self.pause_tracking()
+  
             else:
+                print("You are right punk")
                 self.tarea_iniciada = True
-                self.count_down_thread = QThread()
-                self.count_down_worker = Temporizador(0)
-                self.start_countdown_signal.emit()                 
+                if self.mode==0:
+                    if self.count_down_thread.isRunning()==False:
+                        self.count_down_thread = QThread()
+                        self.count_down_worker = Temporizador(0)
+                        self.start_countdown_signal.emit()
+                
+                    self.start_clic_manager()
+                
+                if self.paused:
+                    self.pause_tracking()
+                    if self.gaze_thread != None:
+                        if self.gaze_thread.isRunning():
+                            if self.gaze_worker.paused:
+                                self.gaze_worker.pause()
+                
+
         else:
             self.tarea_iniciada= True
             self.agregar_tarea()  
  
-    def pause_tracking(self):
+    """ def pause_tracking(self):
         if self.mode==0:
             if self.timer_distraido_worker:
                 if self.clic_worker.paused != self.timer_distraido_worker.paused:
@@ -911,7 +1077,40 @@ class FocusIOn(QMainWindow):
         if self.l_timer_distraido.isEnabled():
             self.l_timer_distraido.setEnabled(False)
         else:
-            self.l_timer_distraido.setEnabled(True)
+            self.l_timer_distraido.setEnabled(True) """
+    def pause_tracking(self):#nuevo
+        
+        if self.mode==0:
+                self.clic_worker.pause()
+        else:
+                self.gaze_worker.pause()
+        if self.paused:
+            if self.count_down_worker.paused:
+                self.count_down_worker.pause()
+            
+            if self.l_timer_count_down.isEnabled():
+                self.l_timer_count_down.setEnabled(False)
+            if self.l_timer_distraido.isEnabled():
+                self.l_timer_distraido.setEnabled(False)
+            if self.b_agregar.isEnabled():
+                self.b_agregar.setEnabled(False)
+            self.paused=False
+            self.b_cambiar_modo.setEnabled(False)
+        else:
+            if self.count_down_worker.paused == False:
+                self.count_down_worker.pause()
+            if self.timer_distraido_worker.paused == False:
+                self.timer_distraido_worker.pause()
+            if self.l_timer_count_down.isEnabled()==False:
+                self.l_timer_count_down.setEnabled(True)
+                self.reset_timer()
+            if self.l_timer_distraido.isEnabled()==False:
+                self.l_timer_distraido.setEnabled(True)
+            if self.b_agregar.isEnabled()==False:
+                self.b_agregar.setEnabled(True)
+            
+            self.b_cambiar_modo.setEnabled(True)
+            self.paused=True
         
     def mousePressEvent(self, event):    
         if event.button() == Qt.LeftButton:
