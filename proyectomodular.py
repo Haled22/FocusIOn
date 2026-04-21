@@ -1,9 +1,12 @@
 import sys
 from eyetrax import GazeEstimator, run_9_point_calibration
 from eyetrax.calibration import run_dense_grid_calibration
-from PyQt5.QtWidgets import QApplication, QRubberBand, QWidget,QMainWindow,QStackedWidget,QDialog, QPushButton,QVBoxLayout, QLabel,QDesktopWidget,QMessageBox,QHBoxLayout
+from PyQt5.QtWidgets import (QApplication, QRubberBand, QWidget,QMainWindow,QStackedWidget,QDialog, 
+QPushButton,QVBoxLayout, QLabel,QDesktopWidget,QHBoxLayout)
 from PyQt5.QtCore import *
 from PyQt5.QtGui import QIcon, QCursor,QFont,QPixmap,QImageReader,QMovie
+import numpy as np
+from eyetrax.utils.video import camera, fullscreen, iter_frames
 
 from pynput import mouse
 import pyautogui
@@ -44,6 +47,7 @@ class GazeListener(QObject):
         self.y=0
         self.paused= False
         self.recal = False
+        self.smother = None
         #self.cap = cv2.VideoCapture(0)      
     def initGazeEstimator(self):
 
@@ -51,15 +55,15 @@ class GazeListener(QObject):
         if os.path.isfile("gaze_model.pkl") and self.recal ==False:
             
             loaded_model = self.estimator.load_model("gaze_model.pkl")
+            
         else:
-            run_dense_grid_calibration(self.estimator)
-            kalman = make_kalman()
-            smoother = KalmanEMASmoother(kalman)
-            smoother.tune(self.estimator)
+            run_9_point_calibration(self.estimator)
+            
             self.estimator.save_model("gaze_model.pkl")
-            #self.estimator = GazeEstimator()
-            #self.estimator.load_model("gaze_model.pkl")
-        self.cap = cv2.VideoCapture(0)
+
+        kalman = make_kalman()
+        self.smoother = KalmanEMASmoother(kalman)
+        self.smoother.tune(self.estimator)
     def recalibrate(self):
         self.recal = True
         #time.sleep(1)
@@ -67,25 +71,35 @@ class GazeListener(QObject):
     def run(self):
         self.initGazeEstimator()
         #self.pause()
-        while True:
-            if self.recal:
-                self.pause_timer.emit()
-                self.pause()
-            
-            while self.paused:
+        with camera(0) as cap:
+            for frame in iter_frames(cap):
+                if self.recal:
+                    self.pause_timer.emit()
+                    self.pause()
+                
+                while self.paused:
+                    if self.corriendo == False:
+                        break
+                time.sleep(0.01)
+                features, blink = self.estimator.extract_features(frame)
+                if features is not None and not blink:
+                    
+                    gaze_point = self.estimator.predict(np.array([features]))[0]
+                    x, y = map(int, gaze_point)
+                    self.x, self.y = self.smoother.step(x, y)
+
+                    self.update_coordinates.emit(int(self.x),int(self.y))
                 if self.corriendo == False:
                     break
-            time.sleep(1)
-            self.gaze_check()
-            self.update_coordinates.emit(int(self.x),int(self.y))
-            if self.corriendo == False:
-                break
 
     def gaze_check(self):
-        ret, frame = self.cap.read()
+        """ ret, frame = self.cap.read()
         features, blink = self.estimator.extract_features(frame)
         if features is not None and not blink:
-            self.x, self.y = self.estimator.predict([features])[0]
+            
+            gaze_point = self.estimator.predict(np.array([features]))[0]
+            x, y = map(int, gaze_point)
+            self.x, self.y = self.smoother.step(x, y) """
     def stop(self):
         self.corriendo= False
     def pause(self):
@@ -127,7 +141,7 @@ class MouseListener(QObject):
         else:
             self.paused = True
 #Clase temporal para fines de vizualizacion de la mirada del usuario
-class Punto_visual(QWidget):
+class PuntoVisual(QWidget):
     def __init__(self):
         super().__init__()
         self.setAttribute(Qt.WA_DeleteOnClose, True)
@@ -229,7 +243,7 @@ class AreaTrabajo(QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setWindowFlags( Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setWindowOpacity(0.2)
+        self.setWindowOpacity(0.4)
         self.background = QLabel(self)
         self.background.setGeometry(0, 0, self.maximumWidth(), self.maximumHeight())
         self.background.setStyleSheet("""
@@ -388,7 +402,7 @@ class Temporizador(QObject):
 
 
 
-class MostrarMonito(QWidget):
+class Monito(QWidget):
     def __init__(self, parent=None,modo=""):
         super().__init__(parent)
         self.setWindowFlags(
@@ -413,7 +427,7 @@ class MostrarMonito(QWidget):
         self.close()
 
 #Clase que modifica el QLable para que se pueda ajustar el tiempo con el drag del mouse presionado 
-class label_tiempo_ajustable(QLabel):
+class LabelTiempoAjustabe(QLabel):
     def __init__(self, text, parent=None, mode=None):
         super().__init__(text, parent)
         if mode is not None:
@@ -536,7 +550,7 @@ class FocusIOn(QMainWindow):
     
     def __init__(self):
         super().__init__() 
-        self.punto_visual = Punto_visual()
+        self.punto_visual = PuntoVisual()
         self.mode =0
         self.clicks_count =0
         self.timer_iniciado = False
@@ -674,11 +688,11 @@ class FocusIOn(QMainWindow):
         self.b_cambiar_modo.clicked.connect(self.mostrarUiMouse)
         
         global time_left
-        self.l_timer_count_down = label_tiempo_ajustable(time_left.toString("hh:mm:ss"),ojos_widget,0)
+        self.l_timer_count_down = LabelTiempoAjustabe(time_left.toString("hh:mm:ss"),ojos_widget,0)
         self.l_timer_count_down.move(10,40)
 
         global tolerancia_elegida
-        self.l_timer_distraido = label_tiempo_ajustable(tolerancia_elegida.toString("hh:mm:ss"),ojos_widget,1)
+        self.l_timer_distraido = LabelTiempoAjustabe(tolerancia_elegida.toString("hh:mm:ss"),ojos_widget,1)
         self.l_timer_distraido.move(10,100)
         
         self.l_timer_distraido.setAlignment(Qt.AlignCenter)
@@ -732,11 +746,11 @@ class FocusIOn(QMainWindow):
         self.b_cambiar_modo.clicked.connect(self.mostrarUiOjos)
         
         global time_left
-        self.l_timer_count_down = label_tiempo_ajustable(time_left.toString("hh:mm:ss"),mouse_widget,0)
+        self.l_timer_count_down = LabelTiempoAjustabe(time_left.toString("hh:mm:ss"),mouse_widget,0)
         self.l_timer_count_down.move(10,40)
 
         global tolerancia_elegida
-        self.l_timer_distraido = label_tiempo_ajustable(tolerancia_elegida.toString("hh:mm:ss"),mouse_widget,1)
+        self.l_timer_distraido = LabelTiempoAjustabe(tolerancia_elegida.toString("hh:mm:ss"),mouse_widget,1)
         self.l_timer_distraido.move(10,100)
        
         self.l_timer_distraido.setAlignment(Qt.AlignCenter)
@@ -957,9 +971,9 @@ class FocusIOn(QMainWindow):
 
     def evt_success(self):
         self.pause_tracking()
-        #self.confetti = MostrarMonito(self,"confetti")
-        self.happy = MostrarMonito(self,"sway")
-        self.happy = MostrarMonito(self,"confetti")
+        #self.confetti = Monito(self,"confetti")
+        self.happy = Monito(self,"sway")
+        self.happy = Monito(self,"confetti")
   
         
 
